@@ -1,0 +1,29 @@
+########bbmap bbduk for quality filtering and adapter trimming############
+# Loop over each R1 fastq file in the specified directory
+for i in `ls -1 /home/sequences/*_L004_R1_001.fastq.gz`; \
+do
+    # Extract the directory name from the file path of each file
+    dname=$(dirname ${i})
+    # Extract the base name of the file, removing the suffix "_L004_R1_001.fastq.gz"
+    name=$(basename ${i} _L004_R1_001.fastq.gz)
+    
+    # Run bbduk for quality filtering and adapter trimming
+    /home/bbmap/bbduk.sh \
+        in1=${dname}/${name}_L004_R1_001.fastq.gz \         # Specify the input file for R1 (forward reads)
+        in2=${dname}/${name}_L004_R2_001.fastq.gz \         # Specify the input file for R2 (reverse reads)
+        out1=/scratch/clean/${name}_clean_L004_R1_001.fastq.gz \ # Output for cleaned R1 reads
+        out2=/scratch/clean/${name}_clean_L004_R2_001.fastq.gz \ # Output for cleaned R2 reads
+        ref=/home/bbmap/resources/nextera.fa.gz \ # Reference file for adapter sequences (e.g., Nextera adapters)
+        ktrim=r \                   # Trim adapters from the right end of reads
+        k=17 \                      # Use a k-mer length of 17 for adapter detection
+        mink=8 \                    # Minimum k-mer length of 8 for matching
+        hdist=1 \                   # Allow up to 1 mismatch in k-mer matching
+        tpe \                       # Trim paired-end reads together (ensure sync between R1 and R2)
+        tbo \                       # Trim adapters based on both ends of the reads
+        qtrim=rl \                  # Quality trimming from both ends of the reads
+        trimq=10 \                  # Quality threshold of 10 for trimming bases
+        ordered=t \                 # Process reads in an ordered manner (keeps read pairs in sync)
+        threads=112 \               # Use 112 threads for parallel processing
+        stats=trimstats.txt ;       # Output trimming statistics to trimstats.txt
+    
+done
