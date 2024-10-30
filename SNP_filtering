@@ -1,0 +1,107 @@
+bash
+#### Zip and Index VCF Files ####
+bgzip -c XXcv.vcf > XXcv.vcf.gz            # Compress the VCF file with bgzip
+tabix -p vcf XXcv.vcf.gz                   # Index the compressed VCF file for fast access
+
+###### Check Summary Information and Stats from VCF File ######
+bcftools stats -s - XXcv.vcf.gz > BPcv.sumstats  # Generate summary stats for the VCF file using bcftools
+
+######## VCF Filtering with VCFtools ########
+vcftools --gzvcf XXcv.vcf.gz --max-missing 0.5 --mac 3 --minQ 30 --minDP 3 \
+    --recode --recode-INFO-all --out raw.g5mac3dp3
+
+# Parameters:
+# --max-missing 0.5: Filter SNPs called in less than 50% of individuals
+# --mac 3: Retain SNPs with a minimum minor allele count of 3
+# --minQ 30: Minimum quality threshold of 30 for including variants
+# --minDP 3: Minimum depth per site of 3 for each SNP
+# --recode: Output a filtered VCF file with the specified conditions
+# --recode-INFO-all: Retain all INFO fields in the recoded file
+# --out: Specify the output file name for the filtered VCF
+
+### Download ErrorCount.sh Script, Make it Executable, and Run to Check Potential Genotyping Errors ###
+curl -L -O https://github.com/jpuritz/dDocent/raw/master/scripts/ErrorCount.sh  # Download ErrorCount.sh
+chmod +x ErrorCount.sh                             # Make the script executable
+./ErrorCount.sh raw.g5mac3dp3.recode.vcf > errorcount  # Run the script and output results to errorcount
+
+# This script calculates potential genotyping errors due to low read depth.
+# It estimates the error range based on probabilities for observing alternative alleles.
+# The results summarize potential error rates for genotypes with low read depth.
+
+### Filter Individuals Based on Relatedness and Missingness ###
+vcftools --vcf raw.g5mac3dp3.recode.vcf --relatedness2  # Calculate relatedness between individuals
+# Retain individuals with a relatedness score less than 0.20 and remove those above this threshold.
+
+vcftools --vcf raw.g5mac3dp3.recode.vcf --missing-indv  # Check missingness for each individual
+# Identify individuals with high levels of missing data (e.g., more than 50%).
+
+# Generate a list of individuals with more than 50% missing data:
+mawk '$5 > 0.5' out.imiss | cut -f1 > lowDP.indv       # Filter individuals with >50% missing data
+
+# Remove individuals with high missingness from the dataset:
+vcftools --vcf raw.g5mac3dp3.recode.vcf --remove lowDP.indv \
+    --recode --recode-INFO-all --out raw.g5mac3dplm   # Output new VCF after removing low-quality individuals
+
+#### Main VCF Filtering with Comprehensive Parameters ####
+vcftools --gzvcf /scratch/XXX.vcf.gz \
+    --max-missing 0.90 --maf 0.05 --mac 3 --minQ 30 --min-meanDP 5 \
+    --max-meanDP 50 --remove-indels --recode --recode-INFO-all --out DP5g90maf05q30
+
+# Parameters:
+# --max-missing 0.90: Keep variants called in at least 90% of individuals
+# --maf 0.05: Minimum allele frequency of 5%
+# --mac 3: Minimum allele count of 3
+# --minQ 30: Minimum quality score of 30
+# --min-meanDP 5: Minimum average depth per SNP site of 5
+# --max-meanDP 50: Maximum average depth per SNP site of 50
+# --remove-indels: Exclude indels (insertions and deletions)
+# --recode: Output a filtered VCF file
+# --recode-INFO-all: Retain all INFO fields in the recoded file
+
+### Additional QC: Heterozygosity and Hardy-Weinberg Equilibrium Checks ###
+vcftools --vcf BDP5g90maf05q30.recode.vcf --het --out test_het      # Check observed heterozygosity
+vcftools --vcf DP5g90maf05q30.recode.vcf --hardy --out test_hwe    # Check Hardy-Weinberg equilibrium
+
+##### Filter SNPs Based on Mean Observed Heterozygosity > 0.6 #####
+python SnpsHE.py   # Run custom Python script to identify SNPs with high heterozygosity (potential errors)
+
+# Remove SNPs with high heterozygosity (>0.6):
+grep -Fwvf SNPShighPropHE.txt BDP5g90maf05q30.recode.vcf > filteredHet.vcf
+bgzip -c filteredHet.vcf > filteredHet.vcf.gz       # Compress filtered VCF
+tabix -p vcf DP5g90maf05q30filteredHe.vcf.gz                       # Index the filtered VCF file
+
+### Linkage Pruning ###
+
+# Step 1: Linkage pruning with plink2
+plink2 --vcf DP5g90maf05q30filteredHe.vcf \             # Input VCF file
+    --double-id \                                         # Assign identical sample IDs to Family ID and Individual ID
+    --allow-extra-chr \                                   # Allow analysis of non-standard chromosome names
+    --set-missing-var-ids @:#\$r:\$a \                    # Set unique IDs for any SNPs with missing IDs (using position and alleles)
+    --indep-pairwise 50 5 0.5 \                           # Linkage pruning parameters:
+                                                         # - 50 SNP window
+                                                         # - 5 SNP slide
+                                                         # - Maximum correlation (R^2) threshold of 0.5
+    --out XXX                                           # Output prefix for pruned SNPs
+
+# Explanation of --indep-pairwise 50 5 0.5:
+# This removes all SNPs with an R^2 (pairwise correlation) above 0.5 in a 50-SNP window, sliding forward by 5 SNPs each time.
+
+####### Remove Pruned SNPs#######
+
+plink2 --vcf DP5g90maf05q30filteredHe.vcf \            # Input VCF file for LD-pruned data
+    --double-id \                                         # Set double ID for sample consistency
+    --allow-extra-chr \                                   # Allow non-standard chromosomes
+    --set-missing-var-ids @:#\$r:\$a \                    # Generate unique SNP IDs where needed
+    --extract XXX.prune.in \                            # Only keep SNPs retained after pruning (from .prune.in file)
+    --make-bed \                                          # Convert to binary PLINK format (BED)
+    --pca \                                               # Calculate PCA for population structure
+    --out XXXadm                                        # Output prefix for the binary file and PCA results
+
+##### Convert Binary PLINK to VCF Format #####
+
+plink2 --bfile XXXadm \                                 # Input binary PLINK file
+    --recode vcf \                                        # Recode output to VCF format
+    --double-id \                                         # Set double ID format
+    --allow-extra-chr \                                   # Allow non-standard chromosomes
+    --set-missing-var-ids @:#\$r:\$a \                    # Generate unique IDs for missing SNPs
+    --out DP5g90maf05q30filteredHeLDpruned             # Output VCF file after linkage pruning
