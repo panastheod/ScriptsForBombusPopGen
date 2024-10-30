@@ -1,0 +1,53 @@
+R
+# Load the Required Libraries
+library(data.table)   # For reading large data files quickly
+library(vegan)        # For RDA and related ecological analyses
+
+# Load the Allele Frequency Table
+frq <- fread("output.txt", header = TRUE, sep = "\t")  # Load frequency data
+dim(BTfrq)                                               # Check dimensions of the data
+
+# Extract Genotype Data and Environmental Data
+gen <- frq[, 2:1615188]                                # Extract SNP frequency data (assuming SNPs start in the 2nd column)
+
+# Load Environmental Variables
+env <- read.table("xxxx.txt", sep = "\t", header = TRUE)  # Load environmental data
+# Ensure `env` has columns for environmental variables and geographic coordinates (Lon, Lat)
+
+# Run Redundancy Analysis (RDA) Using Environmental and Geographic Variables
+RDA <- rda(gen ~ Ecosystem + Condition(Lon + Lat), data = env, scale = TRUE)
+# Model:
+# - Response: SNP frequencies (`gen`)
+# - Predictor: Impervious surface area
+# - Conditional (Covariates): Longitude and Latitude (Lon, Lat) to account for spatial structure
+# - `scale = TRUE`: Scale variables to standardize the analysis
+
+# Extract and Plot Loadings for the First RDA Axis
+load.rda <- scores(RDA, choices = c(1), display = "species")  # Extract species (SNP) scores for the first RDA axis
+hist(load.rda[, 1], main = "Loadings on RDA1")                # Plot histogram of loadings on RDA1
+
+# Save Loadings to CSV
+colnames(load.rda) <- c("loading")
+write.csv(load.rda, "RDAloadingsurbanvsruralFreqLonLat.csv", row.names = FALSE)
+
+# Define Function to Identify Outliers Based on Standard Deviation Threshold
+outliers <- function(x, z) {
+  lims <- mean(x) + c(-1, 1) * z * sd(x)   # Set upper and lower bounds (z SD from mean)
+  x[x < lims[1] | x > lims[2]]             # Return SNP names in tails of distribution
+}
+
+# Identify Outliers on the First RDA Axis (3 SD from Mean)
+cand1 <- outliers(load.rda[, 1], 3)        # SNPs with loadings > 3 SD from mean on RDA1
+
+# Count the Number of Outliers
+ncand <- length(cand1)
+ncand
+
+# Save Outliers as a Data Frame
+cand1 <- cbind.data.frame(rep(1, times = length(cand1)), names(cand1), unname(cand1))
+colnames(cand1) <- c("axis", "snp", "loading")       # Add column names
+cand1$snp <- as.character(cand1$snp)                 # Ensure SNP column is character type
+head(cand1)
+
+# Save Outliers to CSV
+write.csv(cand1, "RDAEcosystemLonLat.csv", row.names = FALSE)
