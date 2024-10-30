@@ -1,0 +1,82 @@
+R
+### Load Required Libraries ###
+library(data.table)  # For fast file reading and handling large datasets
+library(nlme)        # For linear mixed-effects modeling
+
+### Set Working Directory ###
+setwd("xxxxxxxxxxxxxx")
+
+### Split Dataset into 10,000-SNP Subsets ###
+original_df <- fread("output.txt", header = TRUE, sep = "\t")   # Load the original frequency data file
+subset_size <- 10000                                            # Define subset size
+num_subsets <- ceiling(ncol(original_df) / subset_size)         # Calculate the number of subsets needed
+output_directory <- '/scratch/LMM/Ecosystem/'
+
+for (i in 1:num_subsets) {
+  start_col <- (i - 1) * subset_size + 1                       # Calculate starting column for each subset
+  end_col <- min(i * subset_size, ncol(original_df))           # Calculate ending column for each subset
+  
+  subset_df <- original_df[, start_col:end_col]                # Extract columns for the subset
+  subset_filename <- paste0('subset_', i, '.txt')              # Define filename for each subset
+  subset_path <- file.path(output_directory, subset_filename)
+  write.table(subset_df, subset_path, row.names = FALSE, sep="\t", col.names=TRUE, quote=FALSE)
+  
+  cat(paste('Subset', i, 'saved to', subset_path, '\n'))
+}
+
+### Shuffle Environmental Data for Permutation Testing ###
+env <- fread("LMMshort.txt", header = TRUE, sep = "\t")
+df_shuffled <- transform(env, Ecosystem = sample(Ecosystem))    # Randomly shuffle the `Ecosystem` column
+write.table(df_shuffled, "Perm.txt", sep="\t", na="NA", row.names=FALSE, quote=FALSE)
+
+### Load and Process SNP Subset Files ###
+setwd("/scratch/panas/BLclean/bam_last/LMM/Ecosystem/permXX/")  # Set directory for mixed model analysis
+env <- fread("LMMshort.txt", header = TRUE, sep = "\t")    # Reload environmental data
+file_list <- list.files(pattern = "^subset_.*\\.txt$")          # List all subset files
+
+control.list <- lmeControl(sing.tol=1e-20)                      # Define control settings for nlme
+
+### Loop Through Each SNP Subset and Fit Mixed Models ###
+for (file in file_list) {
+  dat <- fread(file, header = TRUE, sep = "\t")                 # Read SNP subset
+  fitDat <- cbind(env, dat)                                     # Combine environmental and SNP data
+  
+  fitDat$Pair <- as.factor(fitDat$Pair)                         # Ensure `Pair` is a factor for random effects
+  fitDat$Ecosystem <- as.factor(fitDat$Ecosystem)               # Set `Ecosystem` as a factor
+
+  response_columns <- colnames(fitDat)[grep(".*[1]_", colnames(fitDat))]  # Select columns matching the SNP pattern
+
+  results_df <- data.frame(Variable = character(), PValue = numeric(), TValue = numeric())  # Initialize results storage
+  
+  for (response_var in response_columns) {
+    formula <- as.formula(paste(response_var, "~ Ecosystem"))   # Define formula for each SNP
+    model <- lme(formula, random = ~1 | Pair, data = fitDat, control=control.list)  # Fit mixed model
+    
+    # Extract p-value and t-value for the Ecosystem effect
+    p_value <- summary(model)$tTable[2, "p-value"]
+    t_value <- summary(model)$tTable[2, "Value"]
+    
+    # Append to results dataframe
+    results_df <- rbind(results_df, data.frame(Variable = response_var, PValue = p_value, TValue = t_value))
+  }
+  
+  # Save results for the subset
+  output_file <- gsub(".txt", "_output.txt", file)
+  write.table(results_df, output_file, row.names = FALSE, sep = "\t", col.names = TRUE, quote = FALSE)
+}
+
+### Merge Output Files in Bash ###
+find /LMM/Ecosystem/ -type f -name "subset_*.txt" ! -name "subset_*_output.txt" -exec cp -t /LMM/Ecosystem/perm1/ {} +
+
+# Add header and concatenate output files into a single merged file
+echo -e "SNP\tPValue1\tTValue" > Perm1merged_output.txt
+for file in subset_*_output.txt; do
+  [ "$file" != "file1_output.txt" ] && tail -n +2 "$file" >> Perm1merged_output.txt
+done
+
+# Optional: Additional merging with multiple permutations
+for file in subset_*_output.txt; do
+  [ "$file" != "file1_output.txt" ] && tail -n +2 "$file" >> merged_output.txt
+done
+
+paste merged_output.txt Perm*_output.txt > Perm0_100merged.txt
