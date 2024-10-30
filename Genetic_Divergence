@@ -1,0 +1,38 @@
+R
+###### Load Required Libraries ######
+library(vcfR)      # For reading and processing VCF files in R
+library(StAMPP)    # Provides tools for population differentiation and genetic distance analysis
+
+###### Read and Convert VCF File to genlight Object ######
+vcf <- read.vcfR("DP5g90maf05q30filteredHeLDpruned.vcf")   # Load VCF file containing SNP data
+x <- vcfR2genlight(vcf)                   # Convert VCF data to a genlight object for further processing
+
+###### Prepare Population Names ######
+# Convert the genlight object to a matrix format compatible with StAMPP
+x2 <- as.matrix(x)                        # Convert genlight to matrix format
+sample <- row.names(x2)                   # Extract sample names from matrix rows
+
+# Specify population names manually as a vector, matching the number of samples in x2
+pop.names <- c("1", "1", "1", "1", "2", "2", "2", "2", "3", "3", "3", "3")
+
+###### Convert Allele Counts to Frequencies and Prepare Data for StAMPP ######
+ploidy <- ploidy(x)                       # Extract ploidy information from genlight object
+x2 <- x2 * (1/ploidy)                     # Convert allele counts to frequencies by dividing by ploidy
+x2[is.na(x2)] <- NaN                      # Replace NAs with NaN for StAMPP compatibility
+
+# Create a format identifier for StAMPP
+format <- rep("freq", length(sample))     # Specify "freq" format for allele frequency data
+
+# Combine sample, population names, ploidy, format, and frequency data into a single data frame
+x.stampp <- as.data.frame(cbind(sample, pop.names, ploidy, format, x2))
+
+# Convert to StAMPP format
+geno <- stamppConvert(x.stampp, 'r')      # Convert to StAMPP-compatible format for analysis
+
+###### Calculate Fst and Bootstrap Confidence Intervals ######
+fst <- stamppFst(geno, nboots = 100, percent = 95, nclusters = 1)
+
+# Save Fst analysis results
+write.csv(fst$Bootstraps, "Genetic_distances_bootstraps.csv")  # Bootstrap values
+write.csv(fst$Pvalues, "Genetic_distances_Pvalues.csv")        # P-values for Fst significance
+write.csv(fst$Fsts, "Genetic_distances_Fsts.csv")              # Fst values between populations
