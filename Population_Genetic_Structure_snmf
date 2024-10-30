@@ -1,0 +1,24 @@
+R
+### Load the LEA Library ###
+library(LEA)   # Provides tools for population genetics, specifically for estimating population structure
+
+### Convert VCF to GENO Format for SNMF ###
+output = vcf2geno("DP5g90maf05q30filteredHeLDpruned.vcf")    # Convert a VCF file to GENO format compatible with LEA and SNMF
+# The output is a `.geno` file, which contains genotype data needed for the SNMF analysis
+
+### Run SNMF for Population Structure Analysis ###
+project = snmf("DP5g90maf05q30filteredHeLDpruned.geno",    # Input GENO file with pruned SNP data
+               K = 1:18,                # Range of population clusters (K) to evaluate, from 1 to 18 clusters
+               entropy = TRUE,          # Calculate cross-entropy for model selection
+               repetitions = 10,        # Run each K value 10 times to assess stability
+               project = "new",         # Create a new SNMF project with this analysis
+               ploidy = 2)              # Set ploidy to 2 (for diploid organisms)
+
+### Plot Cross-Entropy Values to Determine Optimal K ###
+plot(project, cex = 1.2, col = "lightblue", pch = 19)
+# Plot cross-entropy values across different K values to assess model quality:
+# - `cex = 1.2`: Set point size for plot markers
+# - `col = "lightblue"`: Use light blue color for points
+# - `pch = 19`: Use solid circle markers for points
+
+# The cross-entropy plot helps determine the optimal K value for population clustering by selecting the 
