@@ -1,0 +1,55 @@
+bash
+##### Make directories for SNP calling #####
+mkdir bam  # Create directories for BAM files
+
+##### Specify genome file location #####
+genome=/scratch/genome/genomic.fna.gz  # Set path to reference genome
+
+##### Index the genome with BWA #####
+bwa-mem2 index $genome  # Index the genome file for alignment using bwa-mem2
+
+##### Run a loop to map, index, and remove PCR duplicates #####
+# Loop over each R1 clean fastq file
+for i in `ls -1 /scratch/clean/*_clean_L004_R1_001.fastq.gz`
+do
+    # Get directory and base name of each input file
+    dname=$(dirname ${i})
+    name=$(basename ${i} _clean_L004_R1_001.fastq.gz)
+    echo "Processing sample: $name"  # Display the name of the sample being processed
+   
+    # Define input files for R1 and R2 reads
+    in1=${dname}/${name}_clean_L004_R1_001.fastq.gz
+    in2=${dname}/${name}_clean_L004_R2_001.fastq.gz
+    
+    # Define paths for BAM, sorted BAM, and remove duplicates BAM files
+    bam=/scratch/bam/${name}.aligned.bam
+    sorted_bam=/scratch/bam/${name}.aligned.sorted.bam
+    rmd_bam=/scratch/bam/${name}.rmd.bam
+          
+    # Step 1: Align reads to the reference genome
+    bwa-mem2 mem -t 112 $genome $in1 $in2 | \
+        samtools view -@ 110 -bSu - > $bam  # Convert SAM to BAM on the fly
+
+    # Step 2: Sort the BAM file
+    samtools sort -@ 112 -o $sorted_bam $bam  # Sort BAM file for downstream use
+
+    # Step 3: Index the sorted BAM file
+    samtools index -@ 112 $sorted_bam  # Create index for the sorted BAM
+
+    # Step 4: Remove PCR duplicates using GATK MarkDuplicates
+    /home/Downloads/gatk-4.2.2.0/gatk --java-options "-Xmx100G" MarkDuplicates \
+        I=$sorted_bam \
+        O=$rmd_bam \
+        REMOVE_DUPLICATES=true \
+        M=${name}.duplicates.txt  # Remove duplicates stats
+
+    # Step 5: Index the remove duplicates BAM file
+    samtools index -@ 112 $rmd_bam  # Create index for the deduplicated BAM file
+
+done 
+
+##### Create a list of BAM files for SNP calling #####
+# Move to the directory containing deduplicated BAM files
+cd /scratch/panas/bam/
+# Generate a list of all BAM files, saving it as all_bams.list
+ls *.rmd.bam > all_bams.list
