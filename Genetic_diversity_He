@@ -1,0 +1,28 @@
+R
+###### Load Required Libraries ######
+library("vcfR")       # For reading VCF files into R
+library("adegenet")   # Provides genetic analysis tools and data structures
+library("hierfstat")  # For population genetic statistics
+library("dartR")      # Specialized tools for SNP data analysis and heterozygosity reports
+
+###### Load VCF Data ######
+vcf <- read.vcfR("DP5g90maf05q30filteredHeLDpruned.vcf")     # Read compressed VCF file containing SNP data
+
+###### Convert VCF Data to genlight Object ######
+gl <- vcfR2genlight(vcf)                  # Convert VCF to genlight format, optimized for population genetics in `dartR` and `adegenet`
+
+###### Load Population Data and Assign Populations ######
+pop.data <- read.table("Pop.txt", sep = "\t", header = TRUE)  # Read population data table
+pop.data$pop <- as.factor(pop.data$pop)   # Convert population data to factor for grouping
+ploidy(gl) <- 2                           # Set ploidy level to 2 (for diploid data)
+pop(gl) <- pop.data$pop                   # Assign population labels to genlight object
+
+###### Check Data and Report Heterozygosity ######
+gl                                        # Display summary of the genlight object
+glx <- gl.compliance.check(gl)            # Check data for compliance with dartR requirements (e.g., missing data)
+
+###### Report Expected Heterozygosity by Population ######
+df <- gl.report.heterozygosity(glx, method = "pop", plot.out = FALSE)  
+# Calculate expected heterozygosity for each population in `glx`
+# - method = "pop": Calculate heterozygosity by population
+# - plot.out = FALSE: Suppress automatic plotting of results
