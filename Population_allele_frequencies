@@ -1,0 +1,23 @@
+bash
+### Step 1: Convert Genotype File to PLINK Binary Format ###
+plink --file /scratch/panas/BTclean/bam/RDA/geno \   # Input genotype file in PLINK format (.ped and .map)
+      --make-bed \                                   # Convert to binary PLINK format (.bed, .bim, .fam)
+      --noweb \                                      # Disable web check (useful for older PLINK versions)
+      --out wgas2 \                                  # Set the output prefix as "wgas2"
+      --allow-extra-chr \                            # Allow non-standard chromosome names if applicable
+      --double-id                                    # Use sample ID for both Family ID and Individual ID
+
+### Step 2: Calculate Allele Frequencies per Population ###
+plink2 --bfile wgas2 \                               # Input the binary PLINK file created in Step 1
+      --freq \                                       # Calculate allele frequencies for each SNP
+      --pheno PlinkPopFreq.txt \                   # Population assignment file; must match the sample IDs in wgas2.fam
+      --loop-cats population \                       # Calculate allele frequencies by looping over unique populations in the phenotype file
+      --double-id \                                  # Use sample ID for both Family ID and Individual ID
+      --allow-extra-chr                              # Allow non-standard chromosomes
+
+# `--pheno PlinkPopFreq.txt` file should have columns: `FID`, `IID`, and `population`,
+# where `FID` and `IID` match the sample IDs in the .fam file, and `population` specifies population assignments.
+
+### Step 3: Merge Allele Frequency Files ###
+python merge_afreq.py ./output.txt
+# Run `merge_afreq.py` to merge allele frequency results for each population into a single file
