@@ -1,3 +1,4 @@
+bash
 ########bbmap bbduk for quality filtering and adapter trimming############
 # Loop over each R1 fastq file in the specified directory
 for i in `ls -1 /home/sequences/*_L004_R1_001.fastq.gz`; \
