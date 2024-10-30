@@ -1,0 +1,15 @@
+bash
+#### CallVariants SNP Caller ####
+/home/Downloads/bbmap/callvariants.sh \
+    ref=/scratch/genomic.fna.gz \   # Reference genome file
+    list=all_bams.list \                  # List of deduplicated BAM files for variant calling
+    out=XXcv.vcf \                        # Output VCF file with SNP calls
+    ploidy=2 \                            # Ploidy level of the organism (2 for diploid)
+    multisample=t \                       # Enable multisample SNP calling (processes all BAM files as samples)
+    ow=t \                                # Overwrite the output file if it already exists
+    nopassdot=f \                         # Show dots in VCF for low-quality sites
+    minad=2 \                             # Minimum allele depth (number of supporting reads) to call a variant
+    minavgmapq=15 \                       # Minimum average mapping quality for reads at a position
+    minreadmapq=15 \                      # Minimum mapping quality of individual reads
+    strandedcov=t \                       # Enable stranded coverage calculation
+    -Xmx501593m                           # Set maximum memory allocation (approximately 501GB)
