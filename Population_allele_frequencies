@@ -1,22 +1,56 @@
-bash
-### Step 1: Convert Genotype File to PLINK Binary Format ###
-plink --file /scratch/panas/BTclean/bam/RDA/geno \   # Input genotype file in PLINK format (.ped and .map)
-      --make-bed \                                   # Convert to binary PLINK format (.bed, .bim, .fam)
-      --noweb \                                      # Disable web check (useful for older PLINK versions)
-      --out wgas2 \                                  # Set the output prefix as "wgas2"
-      --allow-extra-chr \                            # Allow non-standard chromosome names if applicable
-      --double-id                                    # Use sample ID for both Family ID and Individual ID
+#!/bin/bash
 
-### Step 2: Calculate Allele Frequencies per Population ###
-plink2 --bfile wgas2 \                               # Input the binary PLINK file created in Step 1
-      --freq \                                       # Calculate allele frequencies for each SNP
-      --pheno PlinkPopFreq.txt \                   # Population assignment file; must match the sample IDs in wgas2.fam
-      --loop-cats population \                       # Calculate allele frequencies by looping over unique populations in the phenotype file
-      --double-id \                                  # Use sample ID for both Family ID and Individual ID
-      --allow-extra-chr                              # Allow non-standard chromosomes
+# Step 1: Convert VCF to PLINK format
+echo "Converting VCF to PLINK format..."
+vcftools --vcf BL_DP5g90maf05I72filteredHeLDprunedv2.vcf \
+         --plink \
+         --out ./BLcorrectplink \
+         --chrom-map filename.chrom-map.txt
+echo "VCF to PLINK conversion completed."
 
-# `--pheno PlinkPopFreq.txt` file should have columns: `FID`, `IID`, and `population`,
-# where `FID` and `IID` match the sample IDs in the .fam file, and `population` specifies population assignments.
+# Step 2: Impute missing alleles and convert to binary PLINK format
+echo "Imputing missing alleles and converting to binary PLINK format..."
+plink --file BLcorrectplink \
+      --fill-missing-a2 \
+      --make-bed \
+      --double-id \
+      --allow-extra-chr \
+      --out BPplink_imputed
+echo "Imputation and binary PLINK conversion completed."
+
+# Step 3: Recode binary PLINK format back to VCF
+echo "Recoding binary PLINK format back to VCF..."
+plink --allow-extra-chr \
+      --bfile BPplink_imputed \
+      --recode vcf \
+      --no-fid \
+      --out BPimputed_output
+echo "Recode to VCF completed."
+
+# Step 4: Subset VCF based on specific sample groups
+echo "Subsetting VCF based on sample groups..."
+for group in BER BEU BR BU CR CU DR DU GR GU HR HU JR JU LR LU PR PU; do
+    vcftools --vcf BPimputed_output.vcf \
+             --keep $group \
+             --recode \
+             --out $group
+    echo "Subset created for $group."
+done
+echo "Subsetting completed."
+
+# Step 5: Analyze allele frequencies for each subset
+echo "Analyzing allele frequencies for each subset..."
+for group in BER BEU BR BU CR CU DR DU GR GU HR HU JR JU LR LU PR PU; do
+    plink2 --vcf ${group}.recode.vcf \
+           --double-id \
+           --allow-extra-chr \
+           --freq \
+           --out $group
+    echo "Allele frequency analysis completed for $group."
+done
+echo "Allele frequency analysis for all groups completed."
+
+echo "Pipeline execution completed."
 
 ### Step 3: Merge Allele Frequency Files ###
 python merge_afreq.py ./output.txt
