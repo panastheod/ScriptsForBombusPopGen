@@ -70,6 +70,11 @@ grep -Fwvf SNPShighPropHE.txt BDP5g90maf05q30.recode.vcf > filteredHet.vcf
 bgzip -c filteredHet.vcf > filteredHet.vcf.gz       # Compress filtered VCF
 tabix -p vcf DP5g90maf05q30filteredHe.vcf.gz                       # Index the filtered VCF file
 
+# This script which is written by https://github.com/jpuritz counts the number of potential genotyping errors due to low read depth. It report a low range, based on a 50% binomial probability of observing the second allele in a heterozygote and a high range based on a 25% probability.
+curl -L -O https://github.com/jpuritz/dDocent/raw/master/scripts/ErrorCount.sh
+chmod +x ErrorCount.sh 
+./ErrorCount.sh raw.g5mac3dp3.recode.vcf 
+
 ### Linkage Pruning ###
 
 # Step 1: Linkage pruning with plink2
