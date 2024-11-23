@@ -31,7 +31,7 @@ write.table(df_shuffled, "Perm.txt", sep="\t", na="NA", row.names=FALSE, quote=F
 
 ### Load and Process SNP Subset Files ###
 setwd("/scratch/panas/BLclean/bam_last/LMM/Ecosystem/permXX/")  # Set directory for mixed model analysis
-env <- fread("LMMshort.txt", header = TRUE, sep = "\t")    # Reload environmental data
+env <- fread("Perm.txt", header = TRUE, sep = "\t")    # Reload environmental data
 file_list <- list.files(pattern = "^subset_.*\\.txt$")          # List all subset files
 
 control.list <- lmeControl(sing.tol=1e-20)                      # Define control settings for nlme
