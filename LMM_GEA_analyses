@@ -64,9 +64,3 @@ for (file in file_list) {
   output_file <- gsub(".txt", "_output.txt", file)
   write.table(results_df, output_file, row.names = FALSE, sep = "\t", col.names = TRUE, quote = FALSE)
 }
-
-# Add header and concatenate output files into a single merged file
-echo -e "SNP\tPValue1\tTValue" > Perm1merged_output.txt
-for file in subset_*_output.txt; do
-  [ "$file" != "file1_output.txt" ] && tail -n +2 "$file" >> Perm1merged_output.txt
-done
