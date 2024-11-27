@@ -1,0 +1,53 @@
+R
+# Load necessary packages
+library(nlme)
+library(parallel)
+
+# Load your dataset
+data <- read.table("uHeBL_dartR_i_used_this_one_Chrom", header = TRUE, sep = "\t")
+
+# Fit the original model using nlme
+original_model <- lme(fixed = uHeBT_dartR_i_used_this_one ~ Ecosystem,
+                      random = ~ 1 | City, data = data)
+original_coef <- fixef(original_model)["Ecosystem[T.Urban]"] # Extract the coefficient for EcosystemUrban
+original_coef
+
+
+# Define the permutation function
+permute_model <- function(data) {
+  shuffled_data <- data
+  shuffled_data$Ecosystem <- factor(sample(shuffled_data$Ecosystem)) # Shuffle and ensure factor
+  control <- nlme::lmeControl(opt = "optim", msMaxIter = 100000)
+  model <- lme(fixed = uHeBP_withoutLD_i_used_this_one ~ Ecosystem,
+               random = ~ 1 | City, data = shuffled_data, control=control)
+  
+  return(fixef(model)["EcosystemUrban"]) # Return the coefficient for EcosystemUrban
+}
+
+# Number of permutations
+n_permutations <- 1000
+
+# Parallel processing setup
+n_cores <- detectCores() - 1 # Use one less than the number of cores
+cl <- makeCluster(n_cores)
+clusterExport(cl, varlist = c("data", "permute_model", "lme", "fixef")) # Export variables and functions
+
+# Perform permutations in parallel
+set.seed(123) # For reproducibility
+permuted_coefs <- parSapply(cl, 1:n_permutations, function(i) permute_model(data))
+
+# Stop the cluster
+stopCluster(cl)
+
+# Calculate the p-value
+p_value <- mean(abs(permuted_coefs) >= abs(original_coef))
+
+# Plot the permutation distribution
+hist(permuted_coefs, main = "Permutation Distribution of EcosystemUrban Coefficient (nlme)",
+     xlab = "Coefficient", col = "lightblue", breaks = 30)
+abline(v = original_coef, col = "red", lwd = 2, lty = 2)
+
+# Print the results
+cat("Observed Coefficient:", original_coef, "\n")
+cat("P-value:", p_value, "\n")
+
