@@ -1,0 +1,57 @@
+R
+# Load the dataset
+SweepsAll <- read.table("AllChrom_selscan_U-source.win50.xpehh_windows.txt", header = TRUE, sep = "\t")  
+# Reads the data from a tab-separated file with column headers.
+
+# Check the structure of the dataset
+str(SweepsAll)  
+# Outputs the structure of SweepsAll to understand its variables and data types.
+
+# Recode chromosome identifiers to numeric values for easier processing and visualization
+SweepsAll <- SweepsAll %>%
+  mutate(chrom = recode(chrom,
+                        "HG995268.1" = 1, "HG995269.1" = 2, "HG995270.1" = 3, "HG995271.1" = 4,
+                        "HG995272.1" = 5, "HG995273.1" = 6, "HG995274.1" = 7, "HG995275.1" = 8,
+                        "HG995276.1" = 9, "HG995277.1" = 10, "HG995278.1" = 11, "HG995279.1" = 12,
+                        "HG995280.1" = 13, "HG995281.1" = 14, "HG995282.1" = 15, "HG995283.1" = 16,
+                        "HG995284.1" = 17))  
+# Uses the `mutate` function to create or modify a `chrom` column by recoding the string chromosome names 
+# (e.g., "HG995268.1") into numeric values (1 to 17).
+
+# Load necessary libraries for visualization
+library(ggplot2)      # For creating the Manhattan plot
+library(ggnewscale)   # For advanced layer control in ggplot2
+
+# Convert `chrom` to a factor for categorical plotting
+SweepsAll$chrom <- as.factor(SweepsAll$chrom)
+
+# Create the Manhattan plot
+p <- ggplot(SweepsAll, aes(x = BP1, y = normxpehh)) +
+  # Map point colors conditionally: orange for values above a threshold, else use chromosome factor
+  geom_point(aes(color = ifelse(normxpehh > 1.39767428, "above_threshold", as.factor(chrom))), size = 0.5) +
+  
+  # Define the color scale for chromosomes and the threshold
+  scale_color_manual(values = c("1" = "black", "2" = "grey", "3" = "black", "4" = "grey", "5" = "black",
+                                "6" = "grey", "7" = "black", "8" = "grey", "9" = "black", "10" = "grey",
+                                "11" = "black", "12" = "grey", "13" = "black", "14" = "grey",
+                                "15" = "black", "16" = "grey", "17" = "black",
+                                "above_threshold" = "orange")) +  # Adds orange for values exceeding the threshold
+
+  # Label settings
+  labs(x = NULL) +  # Removes the x-axis label
+  theme_minimal() +  # Applies a clean, minimal theme
+  
+  # Customize plot appearance
+  theme(legend.position = "none",  # Hides the legend
+        axis.text.x = element_text(angle = 90, hjust = 1),  # Rotates x-axis text for readability
+        axis.title = element_text(size = 16),  # Sets size of axis titles
+        panel.grid = element_blank(),  # Removes grid lines
+        plot.margin = margin(1, 1, 1, 1, "cm")) +  # Adjusts plot margins
+
+  # Facet the plot by chromosome
+  facet_grid(. ~ chrom, scales = "free_x", space = "free_x", switch = "x") +
+  scale_x_discrete(labels = NULL)  # Hides x-axis labels
+
+# Save the plot to a PDF file
+ggsave("manhattan_plot6.pdf", p, width = 8.5, height = 3, dpi = 600)
+# Exports the Manhattan plot to a PDF file with specified dimensions and resolution
