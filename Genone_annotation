@@ -1,0 +1,81 @@
+# download proteins of related 
+datasets download genome taxon 28641 --include protein --assembly-source RefSeq
+## concatenated protein files using cat merged_protein.faa
+
+# rename fasta headers to simple names without space
+## bombus.fna
+### >OZ075377.1 Bombus lapidarius genome assembly, chromosome: 1
+sed "s/ .*//g" bombus.fna > bombus.fasta
+## bombus.fasta
+### >OZ075377.1
+
+# run GALBA 
+singularity exec /new_scratch/singularity/galba.sif galba.pl --species=bombus_galba --genome=bombus.fasta --prot_seq=merged_protein.faa --threads=12 --augustus_args="--stopCodonExcludedFromCDS=False" --verbosity=1
+
+# run BRAKER2 with bombus_terrestris2 parameters
+# hintsfile.gff generated from a previous braker run with braker.pl --genome=bombus.fasta --prot_seq=merged_protein.faa --species=bombus_braker2 --gff3 --threads 4 --augustus_args="--stopCodonExcludedFromCDS=False" 
+braker.pl --genome=bombus.fasta --hints=hintsfile.gff --useexisting --species=bombus_terrestris2 --gff3 --threads 12 --augustus_args="--stopCodonExcludedFromCDS=False"
+
+# setup funannotate for hymenoptera
+funannotate setup -d hymenoptera
+
+# run funannotate
+funannotate predict -i bombus.fasta -o predict -s bombus_terrestris2 --busco_seed_species bombus_terrestris2 --organism other --max_intronlen 10000 --keep_evm --cpus 12 --header_length 18 --busco_db hymenoptera --ploidy 2
+
+
+### EVM ###
+
+## Preprocess gene predictions
+
+# convert BRAKER2 and GALBA gene_predictions to EVM compatible gff3 
+augustus_GTF_to_EVM_GFF3.pl ../braker2_no_new_training2/braker/Augustus/augustus.hints.gtf > augustus_reformat_evm.gff3
+augustus_GTF_to_EVM_GFF3.pl ../galba/GALBA/galba.gtf > galba_reformat_evm.gff3
+
+# change source column for later merging
+sed "s/Augustus/Braker2/g" braker2_reformat_EVM.gff3.tmp > braker2_reformat_EVM.gff3
+## change source column from Augustus to Braker2
+sed "s/Augustus/Galba/g" galba_reformat_EVM.gff3.tmp > galba_reformat_EVM.gff3
+## change source column from Augustus to Galba
+
+# concatenate Braker2 (braker2_reformat_EVM.gff3) Galba (galba_reformat_EVM.gff3) and funannotate intermediate (EVM) file gene_predictions.gff3
+
+## Preprocess protein evidence
+miniprot -t 16 -d bombus.mpi ../../genome/bombus.fasta
+miniprot -Iu -t 6 --gff bombus.mpi /new_scratch/soura/DatePalmProject/bombus/ref_proteins/ncbi_dataset/data/merged_protein.faa > miniprot_merged_protein_aln_bombus.gff
+
+# convert the outputs to EVM compatible gff3 format
+python3 /home/mrdg/miniconda3/envs/maker/bin/EvmUtils/misc/miniprot_GFF_2_EVM_alignment_GFF3.py ../miniprot/miniprot_merged_protein_aln_bombus.gff > miniprot_reformat_evm.gff3
+# concatenated miniprot_reformat_evm.gff3 and protein_alignments.gff3 from funannotate intermediate files 
+
+## weights (subjective)
+##  ABINITIO_PREDICTION	Augustus	1
+##  OTHER_PREDICTION	HiQ	3
+##  ABINITIO_PREDICTION	GeneMark	1
+##  ABINITIO_PREDICTION	GlimmerHMM	1
+##  ABINITIO_PREDICTION	snap	1
+##  PROTEIN	exonerate	1
+##  ABINITIO_PREDICTION	Braker2	2
+##  ABINITIO_PREDICTION	Galba	2
+##  PROTEIN	miniprot_protAln	1
+
+
+# EVM run
+/new_scratch/soura/Kl_YLS/annotation_extentions/comb_new_and_old_fun/evm/EVidenceModeler-v2.1.0/EVidenceModeler --sample_id blapidarius --genome ../../../genome/bombus.fasta --weights weights.evm.txt --gene_predictions gene_predictions_fun_corr.gff3 --protein_alignments protein_alignments.gff3 --CPU 12 --overlapSize 40000 --segmentSize 400000
+
+## BUSCO run
+busco -i blapidarius.EVM.pep -l hymenoptera_odb10 -c 16 -o busco_prot --offline -m prot
+
+### Results
+##  C:98.1%[S:97.6%,D:0.5%],F:0.4%,M:1.5%,n:5991
+##  5878    Complete BUSCOs (C)
+##  5846    Complete and single-copy BUSCOs (S)
+##  32      Complete and duplicated BUSCOs (D)
+##  26      Fragmented BUSCOs (F)
+##  87      Missing BUSCOs (M)
+##  5991    Total BUSCO groups searched
+
+
+## Seqkit stats
+
+##  file                 format  type     num_seqs    sum_len  min_len  avg_len  max_len
+##  blapidarius.EVM.pep  FASTA   Protein    13,516  6,933,302       50      513   19,560
