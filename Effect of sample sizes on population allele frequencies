@@ -1,0 +1,86 @@
+import pandas as pd
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+
+# File path
+vcf_file_path = "subset.recode.vcf"
+
+# Read the VCF into a DataFrame, excluding metadata lines
+with open(vcf_file_path, 'r') as f:
+    lines = [line for line in f if not line.startswith("##")]
+
+# Extract the header and data rows
+header = lines[0].strip().split("\t")
+data = [line.strip().split("\t") for line in lines[1:]]
+
+# Create a DataFrame for the genotype data
+vcf_df = pd.DataFrame(data, columns=header)
+
+# Extract genotype columns (individual data)
+genotype_columns = header[9:]  # Columns representing individuals
+genotype_data = vcf_df[genotype_columns]
+
+# Define the number of SNPs and iterations for the analysis
+num_snps = len(vcf_df)
+iterations = 100  # Updated to 100 iterations
+subset_sizes = [4, 5, 6, 7, 8, 9, 10, 11]  # Subset sizes extended to include 10 and 11
+
+# Function to calculate allele frequencies
+def calculate_allele_frequencies(genotype_subset):
+    allele_frequencies = []
+    for _, row in genotype_subset.iterrows():
+        alleles = []
+        for genotype in row:
+            if genotype != ".":
+                alleles.extend([int(allele) for allele in genotype.split("/") if allele != "."])
+        if len(alleles) > 0:
+            freq = alleles.count(1) / len(alleles)  # Frequency of alternate allele
+        else:
+            freq = 0.0
+        allele_frequencies.append(freq)
+    return allele_frequencies
+
+# Baseline: calculate allele frequencies for all individuals
+baseline_allele_frequencies = calculate_allele_frequencies(genotype_data)
+
+# Perform analysis for subsets with multiple iterations
+deviations = {size: [] for size in subset_sizes}
+
+for subset_size in subset_sizes:
+    for _ in range(iterations):
+        selected_individuals = random.sample(genotype_columns, subset_size)
+        genotype_subset = genotype_data[selected_individuals]
+        allele_freqs = calculate_allele_frequencies(genotype_subset)
+        deviations[subset_size].append(allele_freqs)
+
+# Calculate mean, SD, and 95% CI for each subset size
+mean_deviation_with_ci = {size: {'mean': [], 'ci': []} for size in subset_sizes}
+
+for subset_size in subset_sizes:
+    freq_matrix = np.array(deviations[subset_size])  # Convert to matrix (iterations x SNPs)
+    mean_deviation_with_ci[subset_size]['mean'] = np.mean(freq_matrix, axis=0)  # Mean across iterations
+    std_dev = np.std(freq_matrix, axis=0)  # Standard deviation
+    se = std_dev / np.sqrt(iterations)  # Standard error
+    mean_deviation_with_ci[subset_size]['ci'] = 1.96 * se  # 95% Confidence Interval
+
+# Plotting the results
+plt.figure(figsize=(14, 10))
+
+# Add baseline
+plt.scatter(range(1, num_snps + 1), baseline_allele_frequencies, label="All Individuals (Baseline)", color='black', s=50)
+
+# Plot deviations with error bars (95% CI) for each subset size
+offset = 0.15  # Offset for each subset size
+for i, size in enumerate(subset_sizes):
+    mean_dev = mean_deviation_with_ci[size]['mean']
+    ci_dev = mean_deviation_with_ci[size]['ci']
+    x_positions = [x + i * offset for x in range(1, num_snps + 1)]
+    plt.errorbar(x_positions, mean_dev, yerr=ci_dev, fmt='o', capsize=3, label=f"{size} individuals (95% CI)")
+
+plt.xlabel("SNP Index")
+plt.ylabel("Mean Allele Frequency")
+plt.title("Mean and 95% CI of Allele Frequencies for Random Subsets of Individuals (100 Runs)")
+plt.legend()
+plt.grid(True)
+plt.show()
