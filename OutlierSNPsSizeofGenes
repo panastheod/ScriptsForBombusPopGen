@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Ensure the script exits if a command fails
+set -e
+
+# Input files
+VCF_FILE="urban_snps.vcf"
+GENOME_ANNOTATION="genome_annotation.gff"
+
+# Output files
+SNP_POSITIONS="urban_snps_positions.bed"
+SNP_10KB_WINDOW="urban_snps_10kb.bed"
+GENE_BED="genes.bed"
+GENES_NEAR_SNPS="genes_near_snps.bed"
+ALL_GENE_LENGTHS="all_gene_lengths.txt"
+NEAR_SNP_GENE_LENGTHS="near_snps_gene_lengths.txt"
+
+echo "Extracting SNP positions from VCF..."
+bcftools query -f '%CHROM\t%POS\n' "$VCF_FILE" > "$SNP_POSITIONS"
+
+echo "Creating 10kb windows around SNPs..."
+awk '{print $1, $2-10000, $2+10000}' OFS="\t" "$SNP_POSITIONS" > "$SNP_10KB_WINDOW"
+
+echo "Extracting gene coordinates from GFF file..."
+awk '$3 == "gene" {print $1, $4, $5, $9}' OFS="\t" "$GENOME_ANNOTATION" > "$GENE_BED"
+
+echo "Finding genes within 10kb of SNPs..."
+bedtools intersect -a "$GENE_BED" -b "$SNP_10KB_WINDOW" > "$GENES_NEAR_SNPS"
+
+echo "Calculating lengths of all genes..."
+awk '{print $3 - $2}' "$GENE_BED" > "$ALL_GENE_LENGTHS"
+
+echo "Calculating lengths of genes near SNPs..."
+awk '{print $3 - $2}' "$GENES_NEAR_SNPS" > "$NEAR_SNP_GENE_LENGTHS"
+
+echo "Analysis complete. Results saved as:"
+echo "- $SNP_POSITIONS"
+echo "- $SNP_10KB_WINDOW"
+echo "- $GENE_BED"
+echo "- $GENES_NEAR_SNPS"
+echo "- $ALL_GENE_LENGTHS"
+echo "- $NEAR_SNP_GENE_LENGTHS"
