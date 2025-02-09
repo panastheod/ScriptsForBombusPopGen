@@ -1,0 +1,164 @@
+R
+# Load required packages
+library(data.table)
+library(Biostrings)
+library(ggplot2)
+
+# --- Function to Extract Chromosome Sizes from FASTA (Only Matching VCF Chromosomes) ---
+get_chromosome_sizes <- function(fasta_file, vcf_data) {
+  fasta <- readDNAStringSet(fasta_file)
+  
+  # Extract only the first part of the chromosome name before the first space
+  chrom_names <- sapply(strsplit(names(fasta), " "), `[`, 1)
+  
+  # Keep only chromosomes that are present in the VCF
+  vcf_chromosomes <- unique(vcf_data$Chromosome)
+  chrom_sizes <- data.table(
+    Chromosome = chrom_names,
+    Length = width(fasta)
+  )[Chromosome %in% vcf_chromosomes]  # Filter out non-matching chromosomes
+  
+  return(chrom_sizes)
+}
+
+# --- Function to Read VCF File ---
+read_vcf <- function(vcf_file) {
+  vcf <- fread(vcf_file, skip = "#CHROM", header = TRUE)
+  vcf_data <- data.table(
+    Chromosome = vcf$`#CHROM`,
+    Position = as.numeric(vcf$POS)
+  )
+  return(vcf_data)
+}
+
+# --- Function to Bin SNPs (Only for Matching Chromosomes) ---
+bin_snps <- function(snp_data, chrom_sizes, bin_size) {
+  bins <- list()
+  
+  for (i in 1:nrow(chrom_sizes)) {
+    chrom <- chrom_sizes$Chromosome[i]
+    max_pos <- chrom_sizes$Length[i]
+    
+    bin_start <- seq(1, max_pos, by = bin_size)
+    bin_end <- c(bin_start[-1] - 1, max_pos)
+    
+    snp_counts <- sapply(seq_along(bin_start), function(j) {
+      sum(snp_data$Chromosome == chrom & 
+            snp_data$Position >= bin_start[j] & 
+            snp_data$Position <= bin_end[j])
+    })
+    
+    bins[[chrom]] <- data.table(Chromosome = chrom, Start = bin_start, End = bin_end, SNP_Count = snp_counts)
+  }
+  
+  return(rbindlist(bins))
+}
+
+# --- Histogram of SNP Counts Across Bins ---
+plot_snp_histogram <- function(binned_data) {
+  ggplot(binned_data, aes(x = SNP_Count)) +
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.7, color = "black") +
+    labs(title = "Histogram of SNP Counts per Bin",
+         x = "SNP Count per Bin",
+         y = "Frequency (Number of Bins)") +
+    theme_minimal()
+}
+
+# --- Poisson Goodness-of-Fit Test ---
+poisson_chi_square_test <- function(binned_data) {
+  observed_counts <- binned_data$SNP_Count
+  total_snps <- sum(observed_counts)
+  num_bins <- length(observed_counts)
+  
+  if (total_snps == 0) {
+    cat("⚠ Warning: No SNPs found in bins! Skipping Poisson test.\n")
+    return(list(statistic = NA, p_value = NA, test_used = "None"))
+  }
+  
+  # Estimate Poisson mean (λ) as the average SNP count per bin
+  lambda <- mean(observed_counts)
+  
+  # Compute expected Poisson probabilities for different SNP counts
+  max_count <- max(observed_counts)
+  expected_poisson <- dpois(0:max_count, lambda) * num_bins
+  
+  # Ensure expected values sum to the total observed count
+  expected_poisson <- expected_poisson / sum(expected_poisson) * total_snps
+  
+  # Convert observed counts into frequency table
+  observed_freq <- table(factor(observed_counts, levels = 0:max_count))
+  
+  # Run Chi-Square Goodness-of-Fit Test against Poisson expectation
+  chi2_test <- chisq.test(as.numeric(observed_freq), p = expected_poisson / sum(expected_poisson))
+  
+  return(list(statistic = chi2_test$statistic, p_value = chi2_test$p.value, test_used = "Poisson Chi-Square Test"))
+}
+
+# --- G-Test (Likelihood Ratio Test) ---
+g_test <- function(observed, expected) {
+  observed[observed == 0] <- 1e-6  # Avoid log(0)
+  expected[expected == 0] <- 1e-6  # Avoid division by zero
+  
+  G_stat <- 2 * sum(observed * log(observed / expected))
+  df <- length(observed) - 1
+  p_value <- 1 - pchisq(G_stat, df)
+  
+  return(list(statistic = G_stat, p_value = p_value, test_used = "G-Test"))
+}
+
+# --- SNP Density Summary Table ---
+snp_density_summary <- function(binned_data) {
+  summary_table <- binned_data[, .(
+    Total_SNPs = sum(SNP_Count),
+    Mean_SNPs_per_Bin = mean(SNP_Count),
+    Median_SNPs_per_Bin = median(SNP_Count),
+    Max_SNPs_in_a_Bin = max(SNP_Count),
+    Min_SNPs_in_a_Bin = min(SNP_Count)
+  ), by = Chromosome]
+  
+  return(summary_table)
+}
+
+# --- Main Function ---
+analyze_snp_distribution <- function(vcf_file, fasta_file, bin_size) {
+  cat("\n🔹 Using bin size:", bin_size, "bp\n")
+  
+  cat("\n📥 Reading VCF file...\n")
+  snp_data <- read_vcf(vcf_file)
+  
+  cat("\n📥 Reading genome sizes from FASTA...\n")
+  chrom_sizes <- get_chromosome_sizes(fasta_file, snp_data)
+  
+  cat("\n📊 Binning SNPs...\n")
+  binned_data <- bin_snps(snp_data, chrom_sizes, bin_size)
+  
+  cat("\n📈 Performing Poisson Chi-Square test...\n")
+  poisson_result <- poisson_chi_square_test(binned_data)
+  
+  cat("\n📈 Performing G-Test (Likelihood Ratio Test)...\n")
+  observed_freq <- table(binned_data$SNP_Count)
+  expected_poisson <- dpois(as.numeric(names(observed_freq)), mean(binned_data$SNP_Count)) * sum(observed_freq)
+  gtest_result <- g_test(as.numeric(observed_freq), expected_poisson)
+  
+  # Print Test Results
+  cat("\n--- 🧪 Test Results ---\n")
+  cat(sprintf("✅ %s: Statistic = %.3f, p-value = %.3f\n", poisson_result$test_used, poisson_result$statistic, poisson_result$p_value))
+  cat(sprintf("✅ %s: Statistic = %.3f, p-value = %.3f\n", gtest_result$test_used, gtest_result$statistic, gtest_result$p_value))
+  
+  # Generate SNP Density Summary
+  cat("\n📊 Generating SNP Density Summary Table...\n")
+  density_summary <- snp_density_summary(binned_data)
+  print(density_summary)
+  
+  # Generate SNP Count Histogram
+  cat("\n📊 Generating SNP Count Histogram...\n")
+  print(plot_snp_histogram(binned_data))
+}
+
+# --- Run the Analysis Directly in R ---
+vcf_file <- "BP_LMMandRDA.vcf"  # Your VCF file
+fasta_file <- "GCA_905332965.1_iyBomPasc1.1_genomic.fna"  # Your FASTA file
+bin_size <- 100000  # Change bin size if needed (100 Kb recommended)
+
+# Run the function
+analyze_snp_distribution(vcf_file, fasta_file, bin_size)
