@@ -1,0 +1,99 @@
+# Load required libraries
+library(dplyr)
+library(readr)
+
+# Load the data (Change the file path if necessary)
+file_path <- "rdalmmoutlierswitheco.txt"
+data <- read_tsv(file_path)
+
+# Filter for rural populations
+rural_data <- data %>% filter(Ecosystem == "R")
+
+# Remove "Pop" and "Ecosystem" columns
+snp_data <- rural_data %>% select(-c(Pop, Ecosystem))
+
+# Calculate the average allele frequency for each SNP across all rural populations
+average_frequencies <- colMeans(snp_data, na.rm = TRUE)
+
+# Define a function to classify SNPs based on frequency
+classify_allele <- function(freq) {
+  if (freq >= 0.5) {
+    return("High Frequency")
+  } else if (freq >= 0.1) {
+    return("Intermediate Frequency")
+  } else {
+    return("Low Frequency")
+  }
+}
+
+# Apply classification to all SNPs
+snp_classification <- sapply(average_frequencies, classify_allele)
+
+# Convert to dataframe
+classification_results <- data.frame(
+  SNP = names(average_frequencies),
+  Average_Frequency = average_frequencies,
+  Classification = snp_classification
+)
+
+# Count the number of SNPs in each category
+classification_counts <- table(classification_results$Classification)
+
+# Perform a binomial test to check if Intermediate Frequency SNPs are overrepresented
+total_snps <- sum(classification_counts)
+expected_prob <- 1/3  # If SNPs were randomly distributed among the categories
+observed_intermediate <- classification_counts["Intermediate Frequency"]
+binom_test_result <- binom.test(observed_intermediate, total_snps, expected_prob, alternative = "greater")
+
+# Print the classification counts
+print(classification_counts)
+
+# Print the binomial test result
+print(binom_test_result)
+
+# Save results if needed
+write.csv(classification_results, "snp_classification_results.csv", row.names = FALSE)
+write.csv(as.data.frame(classification_counts), "snp_classification_summary.csv", row.names = TRUE)
+
+
+
+# Load required libraries
+library(ggplot2)
+
+# Convert classification counts to a dataframe
+classification_df <- as.data.frame(classification_counts)
+colnames(classification_df) <- c("Category", "Count")
+
+# ---- 1. Bar Plot of SNP Categories ----
+ggplot(classification_df, aes(x = Category, y = Count, fill = Category)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "SNP Classification Counts",
+       x = "Allele Frequency Category",
+       y = "Number of SNPs") +
+  scale_fill_manual(values = c("red", "blue", "green"))
+
+# ---- 2. Histogram of Average SNP Frequencies ----
+ggplot(classification_results, aes(x = Average_Frequency)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of Average SNP Frequencies",
+       x = "Average Allele Frequency",
+       y = "Number of SNPs")
+
+
+# Create a new column to classify SNPs as Intermediate or Other
+classification_results$Category <- ifelse(
+  classification_results$Average_Frequency > 0.1 & classification_results$Average_Frequency < 0.5,
+  "Intermediate Frequency", "Other"
+)
+
+# Plot histogram with different colors
+ggplot(classification_results, aes(x = Average_Frequency, fill = Category)) +
+  geom_histogram(binwidth = 0.04, color = "black", alpha = 0.7) +
+  scale_fill_manual(values = c("Intermediate Frequency" = "blue", "Other" = "gray")) +
+  theme_minimal() +
+  labs(title = "Distribution of Average SNP Frequencies",
+       x = "Average Allele Frequency",
+       y = "Number of SNPs") +
+  theme(legend.title = element_blank())  # Remove legend title
