@@ -1,0 +1,74 @@
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(vegan)      # For PERMANOVA (install with install.packages("vegan"))
+library(betareg)    # For Beta Regression (install with install.packages("betareg"))
+
+# Load data (assuming df is already read from your Excel file)
+# df <- read.csv("your_file.csv") # If needed, modify this line
+df <- 
+  read.table("C:/Users/panat/Desktop/Desktop1/ExtractionBlap2021/2024/Fig5Propoerspecies.txt",
+             header=TRUE, stringsAsFactors=TRUE, sep="\t", na.strings="NA", dec=".", 
+             strip.white=TRUE)
+
+# Perform PERMANOVA
+dist_matrix <- vegdist(df$Prop, method = "bray")
+permanova_result <- adonis2(dist_matrix ~ df$Species, data = df)
+print(permanova_result)
+
+
+
+pairwise_permanova <- function(df, dist_method = "bray", permutations = 999) {
+  
+  species_list <- unique(df$Species)
+  pairwise_results <- data.frame(Comparison = character(), F_value = numeric(), R2 = numeric(), P_value = numeric(), stringsAsFactors = FALSE)
+  
+  for (i in 1:(length(species_list) - 1)) {
+    for (j in (i + 1):length(species_list)) {
+      
+      subset_data <- df[df$Species %in% c(species_list[i], species_list[j]), ]
+      dist_matrix <- vegdist(subset_data$Prop, method = dist_method)
+      
+      permanova_result <- adonis2(dist_matrix ~ Species, data = subset_data, permutations = permutations)
+      
+      # Store results
+      pairwise_results <- rbind(pairwise_results, data.frame(
+        Comparison = paste(species_list[i], "vs", species_list[j]),
+        F_value = permanova_result$F[1],
+        R2 = permanova_result$R2[1],
+        P_value = permanova_result$`Pr(>F)`[1]
+      ))
+    }
+  }
+  
+  return(pairwise_results)
+}
+
+
+pairwise_results <- pairwise_permanova(df)
+print(pairwise_results)
+
+
+install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+
+library(pairwiseAdonis)
+
+# Compute Bray-Curtis distance matrix
+dist_matrix <- vegdist(df$Prop, method = "bray")
+
+# Run pairwise PERMANOVA
+pairwise_results <- pairwise.adonis2(dist_matrix ~ Species, data = df, perm = 999)
+
+# Print pairwise results
+print(pairwise_results)
+
+
+# Plot SNP proportions by region and species
+ggplot(df, aes(x = Region, y = Prop, fill = Species)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Create a grouped bar plot
+  theme_minimal() +
+  labs(title = "SNP Proportions Across Regions and Species",
+       x = "Genomic Region",
+       y = "Proportion of SNPs") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels for readability
